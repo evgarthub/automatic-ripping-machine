@@ -9,6 +9,7 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 from flask_cors import CORS
 from flask_wtf import CSRFProtect
+from flask_socketio import SocketIO
 from arm.ripper.logger import short_format
 
 from flask_login import LoginManager
@@ -43,6 +44,7 @@ app = Flask(__name__)
 csrf = CSRFProtect()
 csrf.init_app(app)
 CORS(app, resources={r"/*": {"origins": "*", "send_wildcard": "False"}})
+socketio = SocketIO(app, cors_allowed_origins="*")
 
 login_manager = LoginManager()
 login_manager.init_app(app)
@@ -72,6 +74,7 @@ from arm.ui.history.history import route_history  # noqa: E402,F811
 from arm.ui.jobs.jobs import route_jobs  # noqa: E402,F811
 from arm.ui.sendmovies.sendmovies import route_sendmovies  # noqa: E402,F811
 from arm.ui.notifications.notifications import route_notifications  # noqa: E402,F811
+from arm.ui.api.v1 import api_v1  # noqa: E402,F811
 app.register_blueprint(route_settings)
 app.register_blueprint(route_logs)
 app.register_blueprint(route_auth)
@@ -80,6 +83,7 @@ app.register_blueprint(route_history)
 app.register_blueprint(route_jobs)
 app.register_blueprint(route_sendmovies)
 app.register_blueprint(route_notifications)
+app.register_blueprint(api_v1)
 
 # Remove GET/page loads from logging
 import logging  # noqa: E402,F811

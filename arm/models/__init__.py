@@ -7,6 +7,7 @@ from .job import Job, JobState  # noqa F401
 from .notifications import Notifications  # noqa F401
 from .system_drives import SystemDrives  # noqa F401
 from .system_info import SystemInfo  # noqa F401
+from .token import Token
 from .track import Track  # noqa F401
 from .ui_settings import UISettings  # noqa F401
 from .user import User  # noqa F401

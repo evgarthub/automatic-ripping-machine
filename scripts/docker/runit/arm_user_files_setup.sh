@@ -23,6 +23,10 @@ check_folder_ownership() {
     echo "Checking ownership of $check_dir"
 
     if [ "$folder_uid" != "$ARM_UID" ] || [ "$folder_gid" != "$ARM_GID" ]; then
+        if [[ "${ARM_DEV_MODE:-}" == "true" ]]; then
+            echo "[WARN]: $check_dir is $folder_uid:$folder_gid (expected $ARM_UID:$ARM_GID); ARM_DEV_MODE=true — continuing."
+            return 0
+        fi
         echo "---------------------------------------------"
         echo "[ERROR]: ARM does not have permissions to $check_dir using $ARM_UID:$ARM_GID"
         echo "Check your user permissions and restart ARM. Folder permissions--> $folder_uid:$folder_gid"
@@ -54,6 +58,10 @@ usermod -a -G render arm
 
 ### Setup Files
 chown -R arm:arm /opt/arm
+
+# Bind-mounted dirs are often root:root on first run (e.g. Docker Desktop).
+chown arm:arm /home/arm
+chown arm:arm /etc/arm/config
 
 # Check ownership of the ARM home folder
 check_folder_ownership "/home/arm"

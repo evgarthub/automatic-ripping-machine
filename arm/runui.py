@@ -12,7 +12,7 @@ import arm.ui.routes  # noqa E402
 import arm.ui.settings.DriveUtils  # noqa E402
 import arm.ui.utils  # noqa E402
 
-from arm.ui import app  # noqa E402
+from arm.ui import app, socketio  # noqa E402
 
 shutdown_requested = False
 
@@ -88,7 +88,12 @@ if __name__ == '__main__':
     from waitress import serve
 
     try:
-        serve(app, host=host, port=port, threads=40)
+        # Check if WebSocket support is needed
+        if hasattr(app, 'socketio'):
+            app.logger.info("Starting ARM-UI with WebSocket support")
+            socketio.run(app, host=host, port=port, debug=False)
+        else:
+            serve(app, host=host, port=port, threads=40)
     except KeyboardInterrupt:
         app.logger.info("Keyboard interrupt received, shutting down ARM-UI.")
     finally:

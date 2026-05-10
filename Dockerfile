@@ -8,6 +8,10 @@ LABEL org.opencontainers.image.description='Automatic Ripping Machine for fully 
 
 EXPOSE 8080
 
+# Override the init script with dev-friendly version
+COPY ./scripts/docker/arm_user_files_setup.sh /etc/my_init.d/arm_user_files_setup.sh
+RUN chmod +x /etc/my_init.d/arm_user_files_setup.sh
+
 # Setup folders and fstab
 RUN \
     mkdir -m 0777 -p /home/arm \
@@ -66,6 +70,9 @@ FROM base AS automatic-ripping-machine
 
 # Copy over source code
 COPY . /opt/arm/
+
+# Base image pins deps from an older tree; install current requirements (e.g. Flask-SocketIO).
+RUN python3 -m pip install --no-cache-dir -r /opt/arm/requirements.txt
 
 # Our docker udev rule
 RUN ln -sv /opt/arm/setup/51-docker-arm.rules /lib/udev/rules.d/
