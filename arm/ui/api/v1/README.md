@@ -124,24 +124,75 @@ Content-Type: application/json
 DELETE /api/v1/jobs/{job_id}
 ```
 
-### Configuration
+### Settings
 
-#### Get Configuration
+arm.yaml is the source of truth for ripper settings; the old `/api/v1/config` endpoints were removed.
+
+#### Get Settings
 ```bash
-GET /api/v1/config
+GET /api/v1/settings
 ```
+Returns `{values, comments, read_only}` where `values` holds every arm.yaml key, `comments` maps keys to their arm.yaml comments and `read_only` flags a non-writable config file.
 
-#### Update Configuration
+#### Update Settings
 ```bash
-PUT /api/v1/config
+PUT /api/v1/settings
 Content-Type: application/json
 
 {
-  "ARM_CHECK_UDF": true,
-  "VIDEOTYPE": "movie",
+  "PREVENT_99": false,
+  "ARM_NAME": "my-arm",
   ...
 }
 ```
+Keys must already exist in arm.yaml (unknown keys return 400); values are coerced to the current value's type (non-coercible values return 400). arm.yaml is rebuilt, hot-reloaded and the new values returned. Read-only file returns 409.
+
+#### Get / Update UI Settings
+```bash
+GET /api/v1/settings/ui
+PUT /api/v1/settings/ui
+Content-Type: application/json
+
+{
+  "index_refresh": 2000,
+  "use_icons": true,
+  "save_remote_images": false,
+  "bootstrap_skin": "bootstrap",
+  "language": "en",
+  "database_limit": 50,
+  "notify_refresh": 10
+}
+```
+
+#### Get / Update abcde Config
+```bash
+GET /api/v1/settings/abcde
+PUT /api/v1/settings/abcde
+Content-Type: application/json
+
+{
+  "content": "<full abcde.conf text>"
+}
+```
+Returns `{content, read_only}`; Windows line endings are cleaned on save.
+
+#### Get / Update Apprise Config
+```bash
+GET /api/v1/settings/apprise
+PUT /api/v1/settings/apprise
+Content-Type: application/json
+
+{
+  "content": "<full apprise.yaml text>"
+}
+```
+Returns `{content, read_only}`; content must parse as a YAML mapping (invalid YAML returns 400).
+
+#### Test Apprise Notification
+```bash
+POST /api/v1/settings/apprise/test
+```
+Sends a test notification and returns the message that was sent.
 
 ### System
 

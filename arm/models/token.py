@@ -27,7 +27,10 @@ class Token(db.Model):
 
     def is_expired(self):
         """Check if token is expired"""
-        return datetime.datetime.now(datetime.timezone.utc) > self.expiry
+        expiry = self.expiry
+        if expiry.tzinfo is None:
+            expiry = expiry.replace(tzinfo=datetime.timezone.utc)
+        return datetime.datetime.now(datetime.timezone.utc) > expiry
 
     def update_last_used(self):
         """Update last used timestamp"""

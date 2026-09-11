@@ -602,7 +602,7 @@ def makemkv_info(job, select=None, index=9999, options=None):
     job.status = JobState.VIDEO_INFO.value
     db.session.commit()
     try:
-        yield from run(info_options, select)
+        yield from run(info_options, select, job=job)
     finally:
         logging.info("MakeMKV info exits.")
         job.status = JobState.VIDEO_WAITING.value
@@ -650,7 +650,8 @@ def makemkv_backup(job, rawpath):
         rawpath,
     ]
     logging.info("Backing up disc")
-    collections.deque(run(cmd, OutputType.MSG), maxlen=0)
+    for line in run(cmd, OutputType.MSG, job=job):
+        logging.debug(f"[MKV] {line}")
 
 
 def makemkv_mkv(job, rawpath):
@@ -704,7 +705,8 @@ def makemkv_mkv(job, rawpath):
             f"--minlength={job.config.MINLENGTH}",
         ]
         logging.info("Process all tracks from disc.")
-        collections.deque(run(cmd, OutputType.MSG), maxlen=0)
+        for line in run(cmd, OutputType.MSG, job=job):
+            logging.debug(f"[MKV] {line}")
     else:
         process_single_tracks(job, rawpath, 'auto')
 
@@ -785,7 +787,7 @@ def rip_mainfeature(job, track, rawpath):
     ]
     logging.info("Ripping main feature")
     # Possibly update db to say track was ripped
-    collections.deque(run(cmd, OutputType.MSG), maxlen=0)
+    collections.deque(run(cmd, OutputType.MSG, job=job), maxlen=0)
 
 
 def process_single_tracks(job, rawpath, mode: str):
@@ -836,7 +838,8 @@ def process_single_tracks(job, rawpath, mode: str):
                 rawpath,
             ]
             logging.debug("Starting to rip single track.")
-            collections.deque(run(cmd, OutputType.MSG), maxlen=0)
+            for line in run(cmd, OutputType.MSG, job=job):
+                logging.debug(f"[MKV] {line}")
 
 
 def setup_rawpath(job, raw_path):
@@ -1158,13 +1161,14 @@ class MakeMKVOutputChecker:
         return self.data
 
 
-def run(options, select):
+def run(options, select, *, job=None):
     """
     Run makemkv with input cli options and yield selected messages
 
     Parameters:
         options (list): makemkvcon cli options
         select (OutputType): output Message Type(s)
+        job: arm.models.job.Job (optional, for progress emission)
     Yields:
         dataclasses of selected type
     Raises:
@@ -1185,11 +1189,14 @@ def run(options, select):
     cmd += list(options)
     buffer = []
     logging.debug(f"command: '{' '.join(cmd)}'")
+    from arm.ripper.progress import emit_job_progress
+
     with subprocess.Popen(cmd, stdout=subprocess.PIPE, text=True) as proc:
         logging.debug(f"PID {proc.pid}: command: '{' '.join(cmd)}'")
         for line in proc.stdout:
             line = line.rstrip(os.linesep)
-            logging.debug(line)  # Maybe write the raw output to a separate log
+            tagged = line if line.startswith("[") else f"[MKV] {line}"
+            logging.debug(tagged)
             if proc.returncode:
                 buffer.append(line)
                 continue
@@ -1200,6 +1207,20 @@ def run(options, select):
                 buffer.append(line)
                 continue
             logging.debug(data)
+            if msg_type == OutputType.PRGV and job is not None:
+                try:
+                    progress = data.current / data.maximum * 100
+                    progress = max(0, min(100, progress))
+                except (ZeroDivisionError, AttributeError):
+                    progress = None
+                if progress is not None:
+                    stage = job.stage
+                    emit_job_progress(job, progress, stage)
+            elif msg_type == OutputType.PRGC and job is not None:
+                try:
+                    job.stage = data.name
+                except AttributeError:
+                    pass
             if msg_type in select:
                 yield data
     if proc.returncode:

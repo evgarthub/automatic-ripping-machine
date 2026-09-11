@@ -15,38 +15,89 @@ from arm.models.job import JobState
 PROCESS_COMPLETE = "Handbrake processing complete"
 
 
-def run_handbrake_command(cmd, track=None, track_number=None):
+def run_handbrake_command(cmd, job, logfile, track=None, track_number=None):
     """
-    Execute a HandBrake command and handle errors consistently.
+    Execute a HandBrake command via Popen, tee output to logfile with [HB] tags,
+    parse progress and ETA, and handle errors consistently.
 
-    :param cmd: The HandBrake command to execute
+    :param cmd: The HandBrake command to execute (no shell redirect)
+    :param job: The job object for progress updates
+    :param logfile: Absolute path to logfile for appending
     :param track: Optional track object to update status
     :param track_number: Optional track number for error messages
-    :return: Output from HandBrake command
-    :raises subprocess.CalledProcessError: If HandBrake fails
+    :return: Accumulated stdout output
+    :raises subprocess.CalledProcessError: If HandBrake returns non-zero
     """
+    from arm.ripper.progress import emit_job_progress
+
     logging.debug(f"Sending command: {cmd}")
 
-    try:
-        hand_brake_output = subprocess.check_output(
-            cmd,
-            shell=True
-        ).decode("utf-8")
-        logging.debug(f"Handbrake exit code: {hand_brake_output}")
-        if track:
-            track.status = "success"
-        return hand_brake_output
-    except subprocess.CalledProcessError as hb_error:
-        if track_number:
-            err = f"Handbrake encoding of title {track_number} failed with code: {hb_error.returncode}" \
-                  f"({hb_error.output})"
-        else:
-            err = f"Call to handbrake failed with code: {hb_error.returncode}({hb_error.output})"
+    args = shlex.split(cmd)
+    process = subprocess.Popen(
+        args,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        universal_newlines=True,
+        bufsize=1,
+    )
+
+    output_lines = []
+    track_re = re.compile(r'Processing track #(\d{1,2}) of (\d{1,2})')
+    encoding_re = re.compile(
+        r'Encoding: task (\d of \d), (\d{1,3}\.\d{2}) %.{0,40}'
+        r'ETA ([\dhms:]*?)\)'
+    )
+    total_tasks = 1
+    total_tracks = 1
+    current_track_num = 0
+    current_task_pct = 0.0
+
+    with open(logfile, "a", encoding="utf-8", errors="replace") as logf:
+        for line in process.stdout:
+            output_lines.append(line)
+            tagged = line if line.lstrip().startswith("[") else f"[HB]{line}"
+            logf.write(tagged)
+            logf.flush()
+
+            track_m = track_re.search(line)
+            if track_m:
+                current_track_num = int(track_m.group(1))
+                total_tracks = int(track_m.group(2))
+
+            enc_m = encoding_re.search(line)
+            if enc_m:
+                total_tasks_str = enc_m.group(1)
+                parts = total_tasks_str.split()
+                if len(parts) == 3:
+                    total_tasks = int(parts[2])
+                current_task_pct = float(enc_m.group(2))
+                eta = enc_m.group(3)
+
+                overall = (current_track_num + current_task_pct / 100.0) / total_tracks * 100
+                emit_job_progress(
+                    job,
+                    overall,
+                    stage=f"Track {current_track_num}/{total_tracks}, task {parts[0]}/{parts[2]}",
+                    eta=eta,
+                )
+
+    process.wait()
+    if process.returncode != 0:
+        err = (
+            f"Handbrake encoding of title {track_number} failed with code: "
+            f"{process.returncode}"
+            if track_number
+            else f"Call to handbrake failed with code: {process.returncode}"
+        )
         logging.error(err)
         if track:
             track.status = "fail"
             track.error = err
-        raise subprocess.CalledProcessError(hb_error.returncode, cmd)
+        raise subprocess.CalledProcessError(process.returncode, cmd)
+
+    if track:
+        track.status = "success"
+    return "".join(output_lines)
 
 
 def build_handbrake_command(srcpath, filepathname, hb_preset, hb_args, logfile,
@@ -76,8 +127,7 @@ def build_handbrake_command(srcpath, filepathname, hb_preset, hb_args, logfile,
     if track_number is not None:
         cmd += f"-t {track_number} "
 
-    cmd += f"{hb_args} " \
-           f">> {logfile} 2>&1"
+    cmd += f"{hb_args}"
 
     return cmd
 
@@ -128,7 +178,7 @@ def handbrake_main_feature(srcpath, basepath, logfile, job):
     cmd = build_handbrake_command(srcpath, filepathname, hb_preset, hb_args, logfile, main_feature=True)
 
     try:
-        run_handbrake_command(cmd, track)
+        run_handbrake_command(cmd, job, logfile, track)
         logging.info("Handbrake call successful")
     except subprocess.CalledProcessError:
         job.errors = track.error
@@ -189,7 +239,7 @@ def handbrake_all(srcpath, basepath, logfile, job):
                                           track_number=track.track_number)
 
             try:
-                run_handbrake_command(cmd, track, track.track_number)
+                run_handbrake_command(cmd, job, logfile, track, track.track_number)
             except subprocess.CalledProcessError:
                 db.session.commit()
                 raise
@@ -251,7 +301,7 @@ def handbrake_mkv(srcpath, basepath, logfile, job):
         logging.info(f"Transcoding file {shlex.quote(files)} to {shlex.quote(filepathname)}")
 
         cmd = build_handbrake_command(srcpathname, filepathname, hb_preset, hb_args, logfile)
-        run_handbrake_command(cmd)
+        run_handbrake_command(cmd, job, logfile)
 
     logging.info(PROCESS_COMPLETE)
     logging.debug(f"\n\r{job.pretty_table()}")

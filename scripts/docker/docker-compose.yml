@@ -17,6 +17,8 @@ services:
       - ARM_GID=1000
       - TZ=Europe/Kyiv
       - ARM_DEV_MODE=true
+      # Uncomment to force the full recursive chown of /opt/arm on every start (slow on bind mounts)
+      # - ARM_FORCE_CHOWN=true
     volumes:
       - ../../.arm-docker/home:/home/arm
       - ../../.arm-docker/home/music:/home/arm/music

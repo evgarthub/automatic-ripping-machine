@@ -192,3 +192,10 @@ arm.yaml
 
 .agents
 skills-lock.json
+
+# Build artifacts / local junk
+/arm-image.tar
+node_modules/
+pi-session-*.html
+/package-lock.json
+arm-react/package-lock.json

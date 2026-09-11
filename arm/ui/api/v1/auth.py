@@ -2,11 +2,14 @@
 API v1 Authentication routes
 """
 import bcrypt
-from flask import request, jsonify
+from flask import request, jsonify, current_app
 
 from . import api_v1
 from arm.models.user import User
 from arm.models.token import Token
+from arm.ui import db
+
+MIN_PASSWORD_LENGTH = 6
 
 
 def require_token(f):
@@ -110,6 +113,58 @@ def refresh_token():
             'expiry': new_token.expiry.isoformat(),
             'user_id': current_token.user_id
         }
+    }), 200
+
+
+@api_v1.route('/auth/password', methods=['PUT'])
+@require_token
+def update_password():
+    """Change the password of the token's user, mirroring the legacy bcrypt scheme
+
+    Request Body:
+        current_password (str): the user's current password
+        new_password (str): the new password (min 6 characters)
+
+    The existing hash is reused as the salt so passwords stay compatible
+    with the legacy UI. On success every API token of the user is revoked,
+    mirroring the legacy redirect to logout after a password change.
+    """
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict) or 'current_password' not in data or 'new_password' not in data:
+        return jsonify({
+            'success': False,
+            'error': 'JSON body with current_password and new_password required'
+        }), 400
+
+    user = getattr(request, 'api_user', None) or User.query.first()
+    if user is None:
+        return jsonify({'success': False, 'error': 'User not found'}), 404
+
+    new_password = str(data['new_password']).strip()
+    if len(new_password) < MIN_PASSWORD_LENGTH:
+        return jsonify({
+            'success': False,
+            'error': f'New password must be at least {MIN_PASSWORD_LENGTH} characters'
+        }), 400
+
+    login_hashed = bcrypt.hashpw(str(data['current_password']).encode('utf-8'), user.hash)
+    if login_hashed != user.password:
+        return jsonify({'success': False, 'error': 'Current password does not match'}), 400
+
+    user.password = bcrypt.hashpw(new_password.encode('utf-8'), user.hash)
+    try:
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Error updating password: {e}")
+        return jsonify({'success': False, 'error': 'Internal server error'}), 500
+
+    Token.query.filter_by(user_id=user.user_id).delete()
+    db.session.commit()
+
+    return jsonify({
+        'success': True,
+        'message': 'Password successfully updated, all API tokens revoked'
     }), 200
 
 

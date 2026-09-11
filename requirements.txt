@@ -11,4 +11,5 @@ Flask-Migrate
 Flask-Cors
 Flask-WTF
 Flask-SocketIO
+simple-websocket
 pyudev==0.24.4

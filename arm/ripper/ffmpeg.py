@@ -474,10 +474,12 @@ def run_transcode_cmd(src_file, out_file, job, ff_pre_args="", ff_post_args=""):
     """
     Run the FFmpeg command and capture the progress for the progress bar in the ui
     """
+    import time as _time
+    from arm.ripper.progress import emit_job_progress
+
     if not ff_pre_args or not ff_post_args:
         ff_pre_args, ff_post_args = correct_ffmpeg_settings(job)
 
-    # Get the total duration of the source file using ffprobe for progress calculation (in microseconds)
     total_duration = 0
     try:
         duration_sec_str = subprocess.check_output(
@@ -487,47 +489,49 @@ def run_transcode_cmd(src_file, out_file, job, ff_pre_args="", ff_post_args=""):
         total_duration = int(float(duration_sec_str) * 1_000_000)
     except (subprocess.CalledProcessError, ValueError) as e:
         logging.error(f"Could not get duration from ffprobe: {e}")
-        # We can continue without progress reporting if this fails
 
-        # Build the ffmpeg command without progress reporting
     cmd = (f"{cfg.arm_config['FFMPEG_CLI']} {ff_pre_args} -i {shlex.quote(src_file)} "
-           f"{'-progress pipe:1 ' if logging.getLogger().isEnabledFor(logging.DEBUG) else ''}"
+           f"-progress pipe:1 "
            f"{ff_post_args} {shlex.quote(out_file)}")
 
     logging.debug(f"FFMPEG command: {cmd}")
 
-    # Execute the ffmpeg command and capture progress
     process = subprocess.Popen(shlex.split(cmd), stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                universal_newlines=True, bufsize=1)
 
-    for line in process.stdout:  # type: ignore
-        if logging.getLogger().isEnabledFor(logging.DEBUG):
-            logging.debug(line.strip())
-            if total_duration > 0 and "out_time_us" in line:
-                parts = line.strip().split("=")
-                if len(parts) == 2 and parts[0] == "out_time_us":
-                    try:
-                        out_time_us = int(parts[1])
-                        percentage = (out_time_us / total_duration) * 100
-                        # Clamp percentage between 0 and 100
-                        percentage = max(0, min(100, percentage))
-                        logging.info(f"ARM: Transcoding progress: {percentage:.2f}%")
-                    except ValueError:
-                        pass
-        else:
-            if total_duration > 0 and "time=" in line:
-                time_search = re.search(r'time=(\d{2}):(\d{2}):(\d{2})\.(\d{2})', line)
-                if time_search:
-                    hours = int(time_search.group(1))
-                    minutes = int(time_search.group(2))
-                    seconds = int(time_search.group(3))
-                    milliseconds = int(time_search.group(4))
-                    out_time_us = (hours * 3600 + minutes * 60 + seconds) * 1000000 + milliseconds * 10000
-                    percentage = (out_time_us / total_duration) * 100
-                    percentage = max(0, min(100, percentage))
-                    logging.info(f"ARM: {line.strip()} - {percentage:.2f}%")
-            else:
-                logging.debug(line.strip())
+    wall_start = _time.monotonic()
+    for line in process.stdout:
+        raw = line.strip()
+        tagged = raw if raw.startswith("[") else f"[FFMPEG] {raw}"
+        logging.debug(tagged)
+
+        out_time_us = None
+        if "out_time_us=" in raw:
+            parts = raw.split("=", 1)
+            if len(parts) == 2:
+                try:
+                    out_time_us = int(parts[1])
+                except ValueError:
+                    pass
+        elif "time=" in raw:
+            time_search = re.search(r'time=(\d{2}):(\d{2}):(\d{2})\.(\d{2})', raw)
+            if time_search:
+                h, m, s, cs = (int(time_search.group(i)) for i in range(1, 5))
+                out_time_us = (h * 3600 + m * 60 + s) * 1_000_000 + cs * 10_000
+
+        if out_time_us is not None and total_duration > 0:
+            percentage = max(0, min(100, (out_time_us / total_duration) * 100))
+            eta = None
+            elapsed = _time.monotonic() - wall_start
+            if elapsed > 0 and out_time_us > 0:
+                rate = out_time_us / elapsed
+                remaining_us = total_duration - out_time_us
+                if rate > 0:
+                    remaining_s = remaining_us / rate
+                    m, s = divmod(int(remaining_s), 60)
+                    h, m = divmod(m, 60)
+                    eta = f"{h:02d}:{m:02d}:{s:02d}"
+            emit_job_progress(job, percentage, None, eta=eta)
 
     process.wait()
 

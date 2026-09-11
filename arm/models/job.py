@@ -100,6 +100,10 @@ class Job(db.Model):
     )
     """
     stage = db.Column(db.String(63))
+    progress = db.Column(db.Integer, default=None, nullable=True)
+    progress_round = db.Column(db.String(16), default=None, nullable=True)
+    eta = db.Column(db.String(32), default=None, nullable=True)
+    progress_updated_at = db.Column(db.DateTime, default=None, nullable=True)
     no_of_titles = db.Column(db.Integer)
     title = db.Column(db.String(256))
     title_auto = db.Column(db.String(256))

@@ -65,11 +65,25 @@ RUN chmod +x /etc/my_init.d/*.sh
 
 
 ###########################################################
+# Build the React SPA (arm-react) into static files
+FROM node:24-slim AS spa
+
+WORKDIR /build
+COPY arm-react/package.json arm-react/yarn.lock arm-react/.yarnrc.yml ./
+RUN corepack enable && yarn install --immutable
+COPY arm-react/ ./
+RUN yarn build
+
+
+###########################################################
 # Final image pushed for use
 FROM base AS automatic-ripping-machine
 
 # Copy over source code
 COPY . /opt/arm/
+
+# Copy the SPA build over the source tree (arm-react/dist is dockerignored)
+COPY --from=spa /build/dist /opt/arm/arm-react/dist
 
 # Base image pins deps from an older tree; install current requirements (e.g. Flask-SocketIO).
 RUN python3 -m pip install --no-cache-dir -r /opt/arm/requirements.txt

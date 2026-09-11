@@ -5,12 +5,15 @@ from typing import Dict, Any, Tuple, Union, Protocol, TypeGuard
 from flask import request, jsonify, current_app, Response
 from sqlalchemy import desc
 from sqlalchemy.exc import SQLAlchemyError
+from werkzeug.exceptions import HTTPException
 
 from . import api_v1
 from .auth import require_token
 from arm.models.job import Job, JobState
+from arm.models.notifications import Notifications
+from arm.models.track import Track
 from arm.ui import db
-from arm.ui.json_api import process_logfile
+from arm.ui.utils import clean_for_filename
 import arm.config.config as cfg
 
 # Type guard for SQLAlchemy columns
@@ -23,6 +26,8 @@ def is_column(obj: Any) -> TypeGuard[ColumnLike]:
 # Configuration constants
 DEFAULT_PER_PAGE = 50
 MAX_PER_PAGE = 100
+METADATA_FIELDS = {'title', 'year', 'video_type', 'imdb_id', 'poster_url'}
+MAX_YEAR_LENGTH = 4
 
 
 def validate_pagination_params(page: int, per_page: int) -> Tuple[int, int]:
@@ -59,9 +64,10 @@ def process_job_progress(job: Job, data_dict: Dict[str, Any]) -> None:
         job: Job instance
         data_dict: Dictionary to update with progress info
     """
-    if not job.finished:
-        log_path = get_log_file_path(job)
-        process_logfile(log_path, job, data_dict)
+    data_dict['progress'] = job.progress if job.progress is not None else 0
+    data_dict['progress_round'] = job.progress_round or '0'
+    data_dict['stage'] = job.stage or ''
+    data_dict['eta'] = job.eta or 'Unknown'
 
 
 @api_v1.route('/jobs', methods=['GET'])
@@ -171,6 +177,7 @@ def get_job(job_id: int) -> Union[Response, Tuple[Response, int]]:
         job = Job.query.get_or_404(job_id)
 
         job_dict = job.get_d()
+        job_dict['tracks'] = [t.get_d() for t in job.tracks.order_by(Track.track_number)]
 
         # Add progress info if active
         process_job_progress(job, job_dict)
@@ -190,6 +197,8 @@ def get_job(job_id: int) -> Union[Response, Tuple[Response, int]]:
             'success': False,
             'error': 'Database error'
         }), 500
+    except HTTPException:
+        raise
     except Exception as e:
         current_app.logger.error(f"Unexpected error getting job {job_id}: {e}")
         return jsonify({
@@ -271,13 +280,11 @@ def get_job_progress(job_id: int) -> Union[Response, Tuple[Response, int]]:
         progress_data = {
             'job_id': job.job_id,
             'status': job.status,
-            'stage': getattr(job, 'stage', 'Unknown'),
-            'progress': getattr(job, 'progress', '0'),
-            'eta': getattr(job, 'eta', 'Unknown')
+            'stage': job.stage or '',
+            'progress': job.progress if job.progress is not None else 0,
+            'progress_round': job.progress_round or '0',
+            'eta': job.eta or 'Unknown',
         }
-
-        # Update progress if job is active
-        process_job_progress(job, progress_data)
 
         return jsonify({
             'success': True,
@@ -409,6 +416,122 @@ def delete_job(job_id: int) -> Union[Response, Tuple[Response, int]]:
         }), 500
     except Exception as e:
         current_app.logger.error(f"Unexpected error deleting job {job_id}: {e}")
+        db.session.rollback()
+        return jsonify({
+            'success': False,
+            'error': 'Internal server error'
+        }), 500
+
+
+def validate_metadata_field(field: str, value: Any) -> Union[str, None]:
+    """Validate a single metadata field value.
+
+    Args:
+        field: The metadata field name
+        value: The value to validate
+
+    Returns:
+        Sanitized value for storage or None if the value is invalid
+    """
+    if field == 'year':
+        if isinstance(value, bool):
+            return None
+        if isinstance(value, int):
+            return str(value)
+        if isinstance(value, str) and value.isdigit() and 0 < len(value) <= MAX_YEAR_LENGTH:
+            return value
+        return None
+    if isinstance(value, str) and value.strip():
+        return value
+    return None
+
+
+@api_v1.route('/jobs/<int:job_id>/metadata', methods=['PUT'])
+@require_token
+def update_job_metadata(job_id: int) -> Union[Response, Tuple[Response, int]]:
+    """Update metadata for a job.
+
+    Args:
+        job_id: The job ID to update
+
+    Request Body:
+        title (str): New title
+        year (int|str): New year
+        video_type (str): New video type
+        imdb_id (str): New IMDB id
+        poster_url (str): New poster URL
+
+    Returns:
+        JSON response with the updated job
+    """
+    try:
+        job = Job.query.get_or_404(job_id)
+
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict) or not data:
+            return jsonify({
+                'success': False,
+                'error': f'JSON body required with at least one field: {", ".join(sorted(METADATA_FIELDS))}'
+            }), 400
+
+        unknown_fields = sorted(set(data.keys()) - METADATA_FIELDS)
+        if unknown_fields:
+            return jsonify({
+                'success': False,
+                'error': f'Unknown fields: {", ".join(unknown_fields)}'
+            }), 400
+
+        validated = {}
+        for field in sorted(data.keys() & METADATA_FIELDS):
+            value = validate_metadata_field(field, data[field])
+            if value is None:
+                return jsonify({
+                    'success': False,
+                    'error': f'Invalid value for field: {field}'
+                }), 400
+            validated[field] = value
+
+        old_title = job.title
+        old_year = job.year
+        if 'title' in validated:
+            job.title = job.title_manual = clean_for_filename(validated['title'])
+        if 'year' in validated:
+            job.year = job.year_manual = validated['year']
+        if 'video_type' in validated:
+            job.video_type = job.video_type_manual = validated['video_type']
+        if 'imdb_id' in validated:
+            job.imdb_id = job.imdb_id_manual = validated['imdb_id']
+        if 'poster_url' in validated:
+            job.poster_url = job.poster_url_manual = validated['poster_url']
+        job.hasnicetitle = True
+
+        new_title = validated.get('title', old_title)
+        new_year = validated.get('year', old_year)
+        notification = Notifications(
+            f"Job: {job.job_id} was updated",
+            f'Title: {old_title} ({old_year}) was updated to '
+            f'{data.get("title", new_title)} ({data.get("year", new_year)})'
+        )
+        db.session.add(notification)
+        db.session.commit()
+        db.session.refresh(job)
+
+        return jsonify({
+            'success': True,
+            'data': job.get_d()
+        }), 200
+
+    except SQLAlchemyError as e:
+        current_app.logger.error(f"Database error updating metadata for job {job_id}: {e}")
+        db.session.rollback()
+        return jsonify({
+            'success': False,
+            'error': 'Database error'
+        }), 500
+    except HTTPException:
+        raise
+    except Exception as e:
+        current_app.logger.error(f"Unexpected error updating metadata for job {job_id}: {e}")
         db.session.rollback()
         return jsonify({
             'success': False,

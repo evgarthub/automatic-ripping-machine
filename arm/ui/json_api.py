@@ -6,7 +6,6 @@ import os
 import subprocess
 import re
 import html
-from collections import deque
 from pathlib import Path
 import datetime
 import psutil
@@ -51,8 +50,6 @@ def get_x_jobs(job_status):
     i = 0
     for j in jobs:
         job_results[i] = {}
-        job_log = os.path.join(cfg.arm_config['LOGPATH'], str(j.logfile))
-        process_logfile(job_log, j, job_results[i])
         try:
             job_results[i]['config'] = j.config.get_d()
         except AttributeError:
@@ -77,199 +74,10 @@ def get_x_jobs(job_status):
             "authenticated": authenticated}
 
 
-def process_logfile(logfile, job, job_results):
-    """
-        Decide if we need to process HandBrake or MakeMKV
-        :param logfile: the logfile for parsing
-        :param job: the Job class
-        :param job_results: the {} of
-        :return: should be dict for the json api
-    """
-    app.logger.debug(f"Disc Type: {job.disctype}, Status: {job.status}")
-    if job.disctype in {"dvd", "bluray"}:
-        if job.status == JobState.VIDEO_RIPPING.value:
-            app.logger.debug("using mkv - " + logfile)
-            return process_makemkv_logfile(job, job_results)
-        if job.status == JobState.TRANSCODE_ACTIVE.value:
-            app.logger.debug("using handbrake")
-            return process_handbrake_logfile(logfile, job, job_results)
-    if job.disctype == "music" and job.status == JobState.AUDIO_RIPPING.value:
-        app.logger.debug("using audio disc")
-        return process_audio_logfile(job.logfile, job, job_results)
-    return job_results
-
-
 def percentage(part, whole):
     """percent calculator"""
     percent = 100 * float(part) / float(whole)
     return percent
-
-
-def process_makemkv_logfile(job, job_results):
-    """
-    Process the logfile and find current status and job progress percent\n
-    :return: job_results dict
-    """
-    job_progress_status = None
-    job_stage_index = None
-    lines = read_log_line(os.path.join(cfg.arm_config['LOGPATH'], job.logfile))
-    # Correctly get last entry for progress bar
-    for line in lines:
-        job_progress_status = re.search(r"PRGV:(\d{3,}),(\d+),(\d{3,})", str(line))
-        job_stage_index = re.search(r"PRGC:\d+,(\d+),\"([\w -]{2,})\"", str(line))
-
-    if job_progress_status is not None:
-        app.logger.debug(f"job_progress_status: {job_progress_status}")
-        job.progress = job_results['progress'] = \
-            f"{percentage(job_progress_status.group(1), job_progress_status.group(3)):.2f}"
-        job.progress_round = percentage(job_progress_status.group(1),
-                                        job_progress_status.group(3))
-    else:
-        app.logger.debug(f"Job [{job.job_id}] MakeMKV status not defined - setting progress to 0%")
-        job.progress = job.progress_round = job_results['progress'] = 0
-
-    if job_stage_index is not None:
-        try:
-            current_index = f"{(int(job_stage_index.group(1)) + 1)}/{job.no_of_titles} - {job_stage_index.group(2)}"
-            job.stage = job_results['stage'] = current_index
-            db.session.commit()
-        except Exception as error:
-            job.stage = f"Unknown -  {error}"
-
-    job.eta = "Unknown"
-
-    return job_results
-
-
-def process_handbrake_logfile(logfile, job, job_results):
-    """
-    process a logfile looking for HandBrake or FFMPEG progress
-    :param logfile: the logfile for parsing
-    :param job: the Job class
-    :param job_results: the {} of
-    :return: should be dict for the json api
-    """
-    job_status = None
-    job_status_index = None
-    ffmpeg_job_status = None
-    lines = read_log_line(logfile)
-    for line in lines:
-        # This correctly get the very last ETA and % for HandBrake
-        hb_search = re.search(r"Encoding: task (\d of \d), (\d{1,3}\.\d{2}) %.{0,40}"
-                              r"ETA ([\dhms]*?)\)(?!\\rEncod)", str(line))
-        if hb_search:
-            job_status = hb_search
-
-        hb_index_search = re.search(r"Processing track #(\d{1,2}) of (\d{1,2})"
-                                    r"(?!.*Processing track #)", str(line))
-        if hb_index_search:
-            job_status_index = hb_index_search
-
-        # Check for FFMPEG status
-        ffmpeg_search = re.search(r"ARM: .* - (\d{1,3}\.\d{2})%", str(line))
-        if ffmpeg_search:
-            ffmpeg_job_status = ffmpeg_search
-
-    # Check ARM can read the Handbrake library and get a status
-    if job_status is not None:
-        app.logger.debug(job_status.group())
-        job.stage = job_status.group(1)
-        job.progress = job_status.group(2)
-        job.eta = job_status.group(3)
-        job.progress_round = int(float(job.progress))
-    elif ffmpeg_job_status is not None:
-        job.stage = "Transcoding"
-        job.progress = ffmpeg_job_status.group(1)
-        job.eta = "Unknown"
-        job.progress_round = int(float(job.progress))
-    else:
-        app.logger.debug(f"Job [{job.job_id}] handbrake/ffmpeg status not defined - setting progress to 0%")
-        job.stage = "Unknown"
-        job.progress = job.progress_round = 0
-        job.eta = "Unknown"
-
-    job_results['stage'] = job.stage
-    job_results['progress'] = job.progress
-    job_results['eta'] = job.eta
-    job_results['progress_round'] = int(float(job_results['progress']))
-
-    if job_status_index:
-        try:
-            current_index = int(job_status_index.group(1))
-            job.stage = job_results['stage'] = f"{job.stage} - {current_index}/{job.no_of_titles}"
-        except Exception as error:
-            app.logger.debug(f"Problem finding the current track {error}")
-            job.stage = f"{job.stage} - %0%/%0%"
-    else:
-        app.logger.debug("Cant find index")
-
-    return job_results
-
-
-def process_audio_logfile(logfile, job, job_results):
-    """
-    Process audio disc logs to show current ripping tracks
-    :param logfile: will come in as only the bare logfile, no path
-    :param job: current job, so we can update the stage
-    :param job_results:
-    :return:
-    """
-    # \((track[^[]+)(?!track)
-    line = read_all_log_lines(os.path.join(cfg.arm_config["LOGPATH"], logfile))
-    for one_line in line:
-        job_stage_index = re.search(r"\(track([^[]+)", str(one_line))
-        if job_stage_index:
-            try:
-                current_index = f"Track: {job_stage_index.group(1)}/{job.no_of_titles}"
-                job.stage = job_results['stage'] = current_index
-                job.eta = calc_process_time(job.start_time, job_stage_index.group(1), job.no_of_titles)
-                job.progress = round(percentage(job_stage_index.group(1), job.no_of_titles + 1))
-                job.progress_round = round(job.progress)
-            except Exception as error:
-                app.logger.debug("Error processing abcde logfile. Error dump"
-                                 f"-  {error}", exc_info=True)
-                job.stage = "Unknown"
-                job.eta = "Unknown"
-                job.progress = job.progress_round = 0
-    return job_results
-
-
-def calc_process_time(starttime, cur_iter, max_iter):
-    """Modified from stackoverflow
-    Get a rough estimate of ETA, return formatted String"""
-    try:
-        time_elapsed = datetime.datetime.now() - starttime
-        time_estimated = (time_elapsed.seconds / int(cur_iter)) * int(max_iter)
-        finish_time = (starttime + datetime.timedelta(seconds=int(time_estimated)))
-        test = finish_time - datetime.datetime.now()
-    except TypeError:
-        app.logger.error("Failed to calculate processing time - Resetting to now, time wont be accurate!")
-        test = time_estimated = time_elapsed = finish_time = datetime.datetime.now()
-    return f"{str(test).split('.', maxsplit=1)[0]} - @{finish_time.strftime('%H:%M:%S')}"
-
-
-def read_log_line(log_file: os.PathLike):
-    """
-    :param log_file: path to log file
-    :return: the last 20 lines of the file at ``log_file``
-    """
-    try:
-        with open(log_file, encoding="utf8", errors="ignore") as read_log_file:
-            lines = deque(read_log_file, maxlen=20)
-    except OSError:
-        app.logger.debug(f"Error while reading {log_file}, unable to calculate ETA")
-        lines = ["", ""]
-    return lines
-
-
-def read_all_log_lines(log_file):
-    """Try to catch if the logfile gets delete before the job is finished"""
-    try:
-        with open(log_file, encoding="utf8", errors='ignore') as read_log_file:
-            line = read_log_file.readlines()
-    except FileNotFoundError:
-        line = ""
-    return line
 
 
 def search(search_query):

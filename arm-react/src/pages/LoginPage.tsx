@@ -9,13 +9,13 @@ import {
 } from '@mui/material'
 import { useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useAuth } from '../auth/AuthContext'
+import { useAuth } from '../auth/useAuth'
 import { labels } from '../labels'
 
 export function LoginPage() {
   const { login } = useAuth()
   const navigate = useNavigate()
-  const [email, setEmail] = useState('')
+  const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
@@ -25,7 +25,7 @@ export function LoginPage() {
     setError(null)
     setSubmitting(true)
     try {
-      await login(email.trim(), password)
+      await login(username.trim(), password)
       navigate('/', { replace: true })
     } catch {
       setError(labels.login.error)
@@ -47,12 +47,12 @@ export function LoginPage() {
         )}
         <Box component="form" onSubmit={onSubmit}>
           <TextField
-            label={labels.login.email}
-            type="email"
+            label={labels.login.username}
+            type="text"
             name="username"
             autoComplete="username"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
             fullWidth
             required
             margin="normal"

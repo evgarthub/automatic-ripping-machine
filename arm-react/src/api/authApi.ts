@@ -1,5 +1,19 @@
-import { apiUrl } from './http'
+import { apiFetchJson, apiUrl } from './http'
 import type { AuthTokenResponse } from './types'
+
+export async function updatePassword(
+  currentPassword: string,
+  newPassword: string,
+): Promise<void> {
+  await apiFetchJson<unknown>('/api/v1/auth/password', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      current_password: currentPassword,
+      new_password: newPassword,
+    }),
+  })
+}
 
 export async function requestToken(
   username: string,
@@ -23,4 +37,12 @@ export async function requestToken(
   }
 
   return json.data
+}
+
+export function revokeToken(token: string): void {
+  const url = apiUrl('/api/v1/auth/revoke')
+  void fetch(url, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+  }).catch(() => undefined)
 }

@@ -75,8 +75,6 @@ def get_host():
     return host
 
 
-# Start ARM using waitress, default number of threads is "4", set ARM count to "40"
-# Higher thread count to accommodate slow blocking processes when the UI is polling the ripper during ripping
 if __name__ == '__main__':
     host = get_host()
     port = cfg.arm_config['WEBSERVER_PORT']
@@ -85,15 +83,9 @@ if __name__ == '__main__':
     # Run ARM Startup
     startup()
 
-    from waitress import serve
-
     try:
-        # Check if WebSocket support is needed
-        if hasattr(app, 'socketio'):
-            app.logger.info("Starting ARM-UI with WebSocket support")
-            socketio.run(app, host=host, port=port, debug=False)
-        else:
-            serve(app, host=host, port=port, threads=40)
+        app.logger.info("Starting ARM-UI with WebSocket support")
+        socketio.run(app, host=host, port=port, debug=False, allow_unsafe_werkzeug=True)
     except KeyboardInterrupt:
         app.logger.info("Keyboard interrupt received, shutting down ARM-UI.")
     finally:

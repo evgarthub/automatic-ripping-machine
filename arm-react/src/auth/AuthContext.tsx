@@ -1,54 +1,62 @@
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { requestToken, revokeToken } from '../api/authApi'
 import {
-  createContext,
-  useCallback,
-  useContext,
-  useMemo,
-  useState,
-  type ReactNode,
-} from 'react'
-import { requestToken } from '../api/authApi'
-import { getStoredToken, setStoredToken } from '../api/http'
+  clearStoredAuth,
+  getStoredExpiry,
+  getStoredToken,
+  isStoredTokenExpired,
+  onAuthChange,
+  setStoredAuth,
+  type StoredAuth,
+} from '../api/http'
+import { AuthContext } from './useAuth'
 
-type AuthContextValue = {
-  token: string | null
-  isAuthenticated: boolean
-  login: (email: string, password: string) => Promise<void>
-  logout: () => void
+function readStoredAuth(): StoredAuth | null {
+  const token = getStoredToken()
+  if (!token) {
+    return null
+  }
+  if (isStoredTokenExpired()) {
+    clearStoredAuth()
+    return null
+  }
+  return { token, expiry: getStoredExpiry() }
 }
 
-const AuthContext = createContext<AuthContextValue | null>(null)
-
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [token, setToken] = useState<string | null>(() => getStoredToken())
+  const [auth, setAuth] = useState<StoredAuth | null>(() => readStoredAuth())
+
+  useEffect(
+    () =>
+      onAuthChange((next) => {
+        setAuth(next)
+      }),
+    [],
+  )
 
   const login = useCallback(async (email: string, password: string) => {
     const data = await requestToken(email, password)
-    setStoredToken(data.token)
-    setToken(data.token)
+    setStoredAuth({ token: data.token, expiry: data.expiry })
   }, [])
 
   const logout = useCallback(() => {
-    setStoredToken(null)
-    setToken(null)
-  }, [])
+    if (auth?.token) {
+      revokeToken(auth.token)
+    }
+    clearStoredAuth()
+    setAuth(null)
+  }, [auth])
 
   const value = useMemo(
     () => ({
-      token,
-      isAuthenticated: Boolean(token),
+      token: auth?.token ?? null,
+      expiry: auth?.expiry ?? null,
+      isAuthenticated: auth !== null,
       login,
       logout,
     }),
-    [token, login, logout],
+    [auth, login, logout],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
-}
-
-export function useAuth(): AuthContextValue {
-  const ctx = useContext(AuthContext)
-  if (!ctx) {
-    throw new Error('useAuth must be used within AuthProvider')
-  }
-  return ctx
 }
