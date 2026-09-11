@@ -127,6 +127,11 @@ for conf in $CONFS; do
   fi
 done
 
+# Config files copied above are created as root, and files bind-mounted from
+# the host may be owned by another user. The armui runs as the arm user and
+# needs write access to update the configs from the settings pages.
+chown -R arm:arm /etc/arm/config
+
 ##### abcde config setup
 # abcde.conf is expected in /etc by the abcde installation
 echo "Checking location of abcde configuration files"
@@ -139,7 +144,7 @@ fi
 if ! [ -f /etc/arm/config/abcde.conf ]; then
   echo "abcde.conf doesnt exist"
   cp /opt/arm/setup/.abcde.conf /etc/arm/config/abcde.conf
-  # chown arm:arm /etc/arm/config/abcde.conf
+  chown arm:arm /etc/arm/config/abcde.conf
 fi
 # The system link to the fake default file -not really needed but as a precaution to the -C variable being blank
 if ! [ -h /etc/abcde.conf ]; then
