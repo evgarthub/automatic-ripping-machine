@@ -88,6 +88,9 @@ else
 fi
 
 # Ensure ownership of mounted dirs
+# Create the config dir first - without a bind mount /etc/arm/config does not
+# exist yet and the chown below would abort the startup script (set -e)
+mkdir -p /etc/arm/config
 chown arm:arm /home/arm
 chown arm:arm /etc/arm/config
 

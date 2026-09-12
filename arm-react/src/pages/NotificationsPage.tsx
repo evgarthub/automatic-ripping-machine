@@ -16,7 +16,6 @@ import {
   Pagination,
   Paper,
   Skeleton,
-  Snackbar,
   Table,
   TableBody,
   TableCell,
@@ -37,14 +36,10 @@ import {
 } from '../api/notificationsApi'
 import { useAuth } from '../auth/useAuth'
 import { labels } from '../labels'
+import { useToast } from '../providers/useToast'
 import { humanizeRelativeTime } from '../utils/humanize'
 
 type FilterToggle = 'all' | 'unread'
-
-interface SnackbarState {
-  message: string
-  severity: 'success' | 'error' | 'info'
-}
 
 const PER_PAGE_OPTIONS = [25, 50, 100] as const
 const SKELETON_ROWS = 8
@@ -83,12 +78,12 @@ function formatTimestamp(value: string): string | null {
 export function NotificationsPage() {
   const { isAuthenticated } = useAuth()
   const queryClient = useQueryClient()
+  const { notify } = useToast()
 
   const [filter, setFilter] = useState<FilterToggle>('all')
   const [page, setPage] = useState(1)
   const [perPage, setPerPage] = useState<number>(25)
   const [clearOpen, setClearOpen] = useState(false)
-  const [snackbar, setSnackbar] = useState<SnackbarState | null>(null)
 
   const unreadOnly = filter === 'unread'
 
@@ -106,7 +101,7 @@ export function NotificationsPage() {
       void queryClient.invalidateQueries({ queryKey: ['notifications'] })
     },
     onError: () => {
-      setSnackbar({ message: labels.notifications.markReadError, severity: 'error' })
+      notify(labels.notifications.markReadError, { severity: 'error' })
     },
   })
 
@@ -116,13 +111,13 @@ export function NotificationsPage() {
       setClearOpen(false)
       void queryClient.invalidateQueries({ queryKey: ['notifications'] })
       if (result.cleared > 0) {
-        setSnackbar({ message: labels.notifications.cleared, severity: 'success' })
+        notify(labels.notifications.cleared, { severity: 'success' })
       } else {
-        setSnackbar({ message: labels.notifications.clearNothing, severity: 'info' })
+        notify(labels.notifications.clearNothing, { severity: 'info' })
       }
     },
     onError: () => {
-      setSnackbar({ message: labels.notifications.clearError, severity: 'error' })
+      notify(labels.notifications.clearError, { severity: 'error' })
     },
   })
 
@@ -379,21 +374,6 @@ export function NotificationsPage() {
         onConfirm={() => clearMutation.mutate()}
         onClose={() => setClearOpen(false)}
       />
-
-      <Snackbar
-        open={snackbar !== null}
-        autoHideDuration={4000}
-        onClose={() => setSnackbar(null)}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
-      >
-        <Alert
-          severity={snackbar?.severity ?? 'info'}
-          variant="filled"
-          onClose={() => setSnackbar(null)}
-        >
-          {snackbar?.message ?? ''}
-        </Alert>
-      </Snackbar>
     </Container>
   )
 }

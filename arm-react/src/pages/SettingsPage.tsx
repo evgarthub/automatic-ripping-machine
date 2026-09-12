@@ -28,7 +28,6 @@ import {
   Link,
   MenuItem,
   Paper,
-  Snackbar,
   Switch,
   Tab,
   Table,
@@ -70,17 +69,13 @@ import type { SystemDriveUpdate } from '../api/systemApi'
 import type { DriveJobInfo, DriveMode, SystemDrive } from '../api/types'
 import { useAuth } from '../auth/useAuth'
 import { labels } from '../labels'
+import { useToast } from '../providers/useToast'
 
 type SettingsTab = 'ripper' | 'ui' | 'abcde' | 'apprise' | 'drives' | 'security'
 
 const MIN_PASSWORD_LENGTH = 6
 
 type NotifySeverity = 'success' | 'error' | 'info'
-
-interface SnackbarState {
-  message: string
-  severity: NotifySeverity
-}
 
 interface SettingsSection {
   id: string
@@ -1470,11 +1465,11 @@ function SecurityTab({ notify }: { notify: (severity: NotifySeverity, message: s
 export function SettingsPage() {
   const { isAuthenticated } = useAuth()
   const [tab, setTab] = useState<SettingsTab>('ripper')
-  const [snackbar, setSnackbar] = useState<SnackbarState | null>(null)
+  const { notify: notifyToast } = useToast()
 
   const notify = useCallback((severity: NotifySeverity, message: string) => {
-    setSnackbar({ message, severity })
-  }, [])
+    notifyToast(message, { severity })
+  }, [notifyToast])
 
   const handleTabChange = (_event: SyntheticEvent<Element>, value: unknown) => {
     if (isSettingsTab(value)) {
@@ -1523,21 +1518,6 @@ export function SettingsPage() {
       {isAuthenticated && tab === 'apprise' && <FileSettingsTab mode="apprise" notify={notify} />}
       {isAuthenticated && tab === 'drives' && <DriveAdminTab notify={notify} />}
       {isAuthenticated && tab === 'security' && <SecurityTab notify={notify} />}
-
-      <Snackbar
-        open={snackbar !== null}
-        autoHideDuration={4000}
-        onClose={() => setSnackbar(null)}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
-      >
-        <Alert
-          severity={snackbar?.severity ?? 'info'}
-          variant="filled"
-          onClose={() => setSnackbar(null)}
-        >
-          {snackbar?.message ?? ''}
-        </Alert>
-      </Snackbar>
     </Container>
   )
 }

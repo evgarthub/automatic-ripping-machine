@@ -63,3 +63,8 @@ export async function clearNotifications(
   const data = await apiFetchJson<{ cleared: number }>(path, { method: 'DELETE' })
   return { cleared: toNumber(data?.cleared, 0) }
 }
+
+export async function fetchNotificationTimeout(): Promise<number> {
+  const data = await apiFetchJson<{ timeout: number }>('/api/v1/notifications/settings/timeout')
+  return toNumber(data?.timeout, 6500)
+}

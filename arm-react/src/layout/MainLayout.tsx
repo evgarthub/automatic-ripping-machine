@@ -6,6 +6,7 @@ import SettingsIcon from "@mui/icons-material/Settings";
 import NotificationsIcon from "@mui/icons-material/Notifications";
 import {
   AppBar,
+  Badge,
   Box,
   Container,
   FormControlLabel,
@@ -33,6 +34,7 @@ import {
 } from "react-router-dom";
 import { useArmSocket } from "../hooks/useArmSocket";
 import { useAuth } from "../auth/useAuth";
+import { useToast } from "../providers/useToast";
 import { labels } from "../labels";
 import { useThemeMode } from "../theme/useThemeMode";
 import GitHubIcon from "@mui/icons-material/GitHub";
@@ -60,6 +62,7 @@ function isNavActive(pathname: string, to: string): boolean {
 export function MainLayout() {
   const { isAuthenticated, logout } = useAuth();
   const { mode, toggleMode } = useThemeMode();
+  const { unreadCount } = useToast();
   const socketConnected = useArmSocket(isAuthenticated);
   const theme = useTheme();
   const queryClient = useQueryClient();
@@ -193,6 +196,19 @@ export function MainLayout() {
                 title={labels.refresh.label}
               >
                 <RefreshIcon />
+              </IconButton>
+            )}
+            {isAuthenticated && (
+              <IconButton
+                color="inherit"
+                component={RouterLink}
+                to="/notifications"
+                aria-label={labels.nav.notifications}
+                title={labels.nav.notifications}
+              >
+                <Badge badgeContent={unreadCount} color="primary" max={99}>
+                  <NotificationsIcon />
+                </Badge>
               </IconButton>
             )}
             <FormControlLabel

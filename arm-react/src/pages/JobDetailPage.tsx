@@ -46,6 +46,7 @@ import type { JobDetail, JobMetadataUpdate, TrackInfo } from '../api/types'
 import { useAuth } from '../auth/useAuth'
 import { LogViewer } from '../components/LogViewer'
 import { labels } from '../labels'
+import { useToast } from '../providers/useToast'
 import { humanizeRelativeTime } from '../utils/humanize'
 
 const POLL_ACTIVE_MS = 30000
@@ -277,6 +278,7 @@ export function JobDetailPage() {
   const jobId = params.jobId ?? ''
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const { notify } = useToast()
 
   const [metadataOpen, setMetadataOpen] = useState(false)
   const [abandonOpen, setAbandonOpen] = useState(false)
@@ -313,7 +315,9 @@ export function JobDetailPage() {
     onSuccess: () => {
       setAbandonOpen(false)
       void queryClient.invalidateQueries({ queryKey: ['jobs'] })
+      notify(labels.jobDetail.abandonSuccess)
     },
+    onError: () => notify(labels.jobDetail.abandonError, { severity: 'error' }),
   })
 
   const deleteMutation = useMutation({
@@ -323,7 +327,9 @@ export function JobDetailPage() {
       queryClient.removeQueries({ queryKey: ['jobs', jobId] })
       void queryClient.invalidateQueries({ queryKey: ['jobs'] })
       navigate('/history')
+      notify(labels.jobDetail.deleteSuccess)
     },
+    onError: () => notify(labels.jobDetail.deleteError, { severity: 'error' }),
   })
 
   const logContent = logsQuery.data?.content ?? ''
@@ -623,6 +629,7 @@ function MetadataDialog({
   onClose: () => void
 }) {
   const queryClient = useQueryClient()
+  const { notify } = useToast()
   const [form, setForm] = useState<MetadataFormState>(() => jobToForm(job))
   const [fieldErrors, setFieldErrors] = useState<MetadataFieldErrors>({})
   const [formError, setFormError] = useState<string | null>(null)
@@ -632,8 +639,10 @@ function MetadataDialog({
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['jobs'] })
       onClose()
+      notify(labels.jobDetail.metadataSaved)
     },
     onError: (error) => {
+      notify(labels.jobDetail.metadataError, { severity: 'error' })
       const message = extractErrorMessage(error) ?? labels.jobDetail.metadataSaveError
       const match = /^Invalid value for field:\s*(\S+)/.exec(message)
       if (match) {
