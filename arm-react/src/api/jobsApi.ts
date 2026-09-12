@@ -6,6 +6,9 @@ import type {
   JobProgress,
   JobSummary,
   PaginationMeta,
+  TitleSearchApplyPayload,
+  TitleSearchDetails,
+  TitleSearchResponse,
 } from './types'
 
 export function fetchActiveJobs(): Promise<JobSummary[]> {
@@ -34,6 +37,38 @@ export async function updateJobMetadata(
 ): Promise<JobDetail> {
   return apiFetchJson<JobDetail>(`/api/v1/jobs/${encodeURIComponent(jobId)}/metadata`, {
     method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+}
+
+export function searchJobTitles(
+  jobId: string,
+  title: string,
+  year: string,
+): Promise<TitleSearchResponse> {
+  const qs = new URLSearchParams()
+  qs.set('title', title)
+  if (year.trim() !== '') {
+    qs.set('year', year.trim())
+  }
+  return apiFetchJson<TitleSearchResponse>(
+    `/api/v1/jobs/${encodeURIComponent(jobId)}/titlesearch?${qs.toString()}`,
+  )
+}
+
+export function fetchTitleDetails(jobId: string, imdbId: string): Promise<TitleSearchDetails> {
+  return apiFetchJson<TitleSearchDetails>(
+    `/api/v1/jobs/${encodeURIComponent(jobId)}/titlesearch/details?imdb_id=${encodeURIComponent(imdbId)}`,
+  )
+}
+
+export async function applyTitleSearch(
+  jobId: string,
+  payload: TitleSearchApplyPayload,
+): Promise<JobDetail> {
+  return apiFetchJson<JobDetail>(`/api/v1/jobs/${encodeURIComponent(jobId)}/titlesearch`, {
+    method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   })

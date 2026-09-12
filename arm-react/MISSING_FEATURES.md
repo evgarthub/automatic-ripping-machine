@@ -59,6 +59,14 @@ Legends:
 
 ## 2. Missing "Title Search" (metadata lookup)
 
+> **Status: implemented.** API: `GET/POST /api/v1/jobs/:job_id/titlesearch` and
+> `GET /api/v1/jobs/:job_id/titlesearch/details` in `arm/ui/api/v1/jobs.py`, sharing an
+> `apply_title_update` helper with `PUT /jobs/:id/metadata`; search retries without year and
+> filters `Type: game` server-side. UI: multi-step `TitleSearchDialog` (search → poster grid →
+> details → apply) on `JobDetailPage`, custom-title mode included, toast feedback via
+> ToastProvider, `['jobs']` queries invalidated on apply. Tests:
+> `test/unittest/test_api_v1_jobs_titlesearch.py`.
+
 ### Legacy
 Flow in `arm/ui/jobs/jobs.py`:
 1. `GET /titlesearch` — form (`TitleSearchForm`: title + year), prefilled from the job.
