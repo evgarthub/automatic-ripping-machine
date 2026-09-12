@@ -45,6 +45,7 @@ import { ApiError } from '../api/http'
 import type { JobDetail, JobMetadataUpdate, TrackInfo } from '../api/types'
 import { useAuth } from '../auth/useAuth'
 import { LogViewer } from '../components/LogViewer'
+import { TitleSearchDialog } from '../components/TitleSearchDialog'
 import { labels } from '../labels'
 import { useToast } from '../providers/useToast'
 import { humanizeRelativeTime } from '../utils/humanize'
@@ -281,6 +282,7 @@ export function JobDetailPage() {
   const { notify } = useToast()
 
   const [metadataOpen, setMetadataOpen] = useState(false)
+  const [titleSearchOpen, setTitleSearchOpen] = useState(false)
   const [abandonOpen, setAbandonOpen] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [logOpen, setLogOpen] = useState(false)
@@ -481,6 +483,9 @@ export function JobDetailPage() {
         <Button variant="outlined" onClick={() => setMetadataOpen(true)}>
           {labels.jobDetail.editMetadata}
         </Button>
+        <Button variant="outlined" onClick={() => setTitleSearchOpen(true)}>
+          {labels.jobDetail.titleSearch}
+        </Button>
         {!finished && (
           <Button
             variant="outlined"
@@ -583,6 +588,24 @@ export function JobDetailPage() {
           jobId={jobId}
           job={job}
           onClose={() => setMetadataOpen(false)}
+          onOpenTitleSearch={() => {
+            setMetadataOpen(false)
+            setTitleSearchOpen(true)
+          }}
+        />
+      )}
+
+      {titleSearchOpen && job && (
+        <TitleSearchDialog
+          jobId={jobId}
+          initialTitle={
+            meaningfulText(job.title_manual) ??
+            meaningfulText(job.title) ??
+            meaningfulText(job.title_auto) ??
+            ''
+          }
+          initialYear={meaningfulText(job.year) ?? ''}
+          onClose={() => setTitleSearchOpen(false)}
         />
       )}
 
@@ -623,10 +646,12 @@ function MetadataDialog({
   jobId,
   job,
   onClose,
+  onOpenTitleSearch,
 }: {
   jobId: string
   job: JobDetail
   onClose: () => void
+  onOpenTitleSearch?: () => void
 }) {
   const queryClient = useQueryClient()
   const { notify } = useToast()
@@ -745,6 +770,11 @@ function MetadataDialog({
           error={Boolean(fieldErrors.poster_url)}
           helperText={fieldErrors.poster_url}
         />
+        {onOpenTitleSearch && (
+          <Button size="small" sx={{ mt: 1 }} onClick={onOpenTitleSearch}>
+            {labels.jobDetail.metadataOpenTitleSearch}
+          </Button>
+        )}
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose} disabled={mutation.isPending}>

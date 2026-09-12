@@ -33,6 +33,9 @@ def sample_job(app):
         db.session.add(job)
         db.session.commit()
         yield job
+        Notifications.query.filter_by(
+            title=f"Job: {job.job_id} was updated"
+        ).delete(synchronize_session=False)
         db.session.delete(job)
         db.session.commit()
 

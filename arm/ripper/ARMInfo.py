@@ -55,7 +55,7 @@ class ARMInfo:
             self.git_branch = "unknown"
             self.git_commit = "unknown"
             return
-        git_regex = r"\*\s(\S+)\n(?:\s*\S*\n){1,10}(?:commit )([a-z\d]{5,7})"
+        git_regex = r"\*\s(\S+)\n(?:\s*\S*\n){0,10}(?:commit )([a-z\d]{5,7})"
         git_match = re.search(git_regex, git_output)
 
         if git_match:

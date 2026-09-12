@@ -26,6 +26,7 @@ _cfg_content = (
 _cfg_path = os.path.join(TEST_DIR, "arm.yaml")
 with open(_cfg_path, "w", encoding="utf-8") as _f:
     _f.write(_cfg_content)
+_prev_config_file = os.environ.get("ARM_CONFIG_FILE")
 os.environ["ARM_CONFIG_FILE"] = _cfg_path
 
 for _mod in (
@@ -41,6 +42,11 @@ sys.path.insert(0, REPO_ROOT)
 
 import arm.config.config  # noqa: F401,E402
 from arm.ripper.utils import mask_sensitive_value  # noqa: E402
+
+if _prev_config_file is None:
+    del os.environ["ARM_CONFIG_FILE"]
+else:
+    os.environ["ARM_CONFIG_FILE"] = _prev_config_file
 
 
 class TestMaskSensitiveValue(unittest.TestCase):

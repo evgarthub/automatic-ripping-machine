@@ -153,6 +153,30 @@ export interface JobMetadataUpdate {
   poster_url?: string
 }
 
+export interface TitleSearchResult {
+  imdb_id: string
+  title: string
+  year: string
+  poster: string
+  type: string
+}
+
+export interface TitleSearchResponse {
+  results: TitleSearchResult[]
+  retried_without_year: boolean
+}
+
+export interface TitleSearchDetails extends TitleSearchResult {
+  plot: string | null
+  background_url: string | null
+}
+
+export interface TitleSearchApplyPayload {
+  imdb_id?: string
+  title?: string
+  year?: string
+}
+
 export interface JobProgress {
   job_id: number
   status: string | null
