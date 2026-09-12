@@ -23,6 +23,10 @@ check_folder_ownership() {
     echo "Checking ownership of $check_dir"
 
     if [ "$folder_uid" != "$ARM_UID" ] || [ "$folder_gid" != "$ARM_GID" ]; then
+        if [[ "${ARM_DEV_MODE:-}" == "true" ]]; then
+            echo "[WARN]: $check_dir is $folder_uid:$folder_gid (expected $ARM_UID:$ARM_GID); ARM_DEV_MODE=true — continuing."
+            return 0
+        fi
         echo "---------------------------------------------"
         echo "[ERROR]: ARM does not have permissions to $check_dir using $ARM_UID:$ARM_GID"
         echo "Check your user permissions and restart ARM. Folder permissions--> $folder_uid:$folder_gid"
@@ -50,10 +54,42 @@ elif [[ $ARM_GID -eq $DEFAULT_GID ]]; then
   groupmod -og $DEFAULT_GID arm
 fi
 echo "Adding arm user to 'render' group"
+if ! getent group render > /dev/null 2>&1; then
+  # The render group doesn't exist inside the container. Create it with the
+  # host GID when the device is passed through so /dev/dri stays accessible,
+  # otherwise fall back to a new group.
+  if [ -e /dev/dri/renderD128 ]; then
+    RENDER_GID=$(stat -c "%g" /dev/dri/renderD128)
+  else
+    RENDER_GID=""
+  fi
+  if [ -n "$RENDER_GID" ] && ! getent group "$RENDER_GID" > /dev/null 2>&1; then
+    groupadd -g "$RENDER_GID" render
+  else
+    groupadd render
+  fi
+fi
 usermod -a -G render arm
 
 ### Setup Files
-chown -R arm:arm /opt/arm
+if [[ "${ARM_FORCE_CHOWN:-}" == "true" ]]; then
+  echo "ARM_FORCE_CHOWN=true - forcing recursive chown of /opt/arm (including mounted paths)..."
+  chown -R arm:arm /opt/arm
+  echo "Forced chown of /opt/arm complete"
+else
+  ARM_TREE_OWNER=$(stat -c "%u:%g" /opt/arm)
+  if [ "$ARM_TREE_OWNER" != "$(id -u arm):$(id -g arm)" ]; then
+    echo "Fixing ownership of /opt/arm (${ARM_TREE_OWNER} -> arm:arm), skipping mounted paths..."
+    find /opt/arm -xdev -print0 | xargs -0 -r chown arm:arm
+    echo "Ownership of /opt/arm updated"
+  else
+    echo "/opt/arm already owned by arm - skipping recursive chown"
+  fi
+fi
+
+# Bind-mounted dirs are often root:root on first run (e.g. Docker Desktop).
+chown arm:arm /home/arm
+chown arm:arm /etc/arm/config
 
 # Check ownership of the ARM home folder
 check_folder_ownership "/home/arm"

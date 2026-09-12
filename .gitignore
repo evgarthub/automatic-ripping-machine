@@ -65,6 +65,10 @@ db.sqlite3-journal
 instance/
 .webassets-cache
 
+# arm-spa (Vite / Node)
+arm-spa/node_modules/
+arm-spa/dist/
+
 # Scrapy stuff:
 .scrapy
 
@@ -183,3 +187,15 @@ removed/*
 /installed
 
 arm.yaml
+# Local Docker Desktop bind-mount data (scripts/docker/docker-compose.yml)
+.arm-docker/
+
+.agents
+skills-lock.json
+
+# Build artifacts / local junk
+/arm-image.tar
+node_modules/
+pi-session-*.html
+/package-lock.json
+arm-react/package-lock.json

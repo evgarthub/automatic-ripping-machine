@@ -1,8 +1,15 @@
--r arm-dependencies/requirements.txt
-
-#requirements added for PR#551
 argparse==1.4.0
 colorama==0.4.6
-#requirements added for PR#650
 flake8==7.2.0
 waitress==2.1.2
+sqlalchemy==2.0.49
+bcrypt==4.0.1
+flask_login==0.6.3
+psutil==7.2.2
+Flask-SQLAlchemy
+Flask-Migrate
+Flask-Cors
+Flask-WTF
+Flask-SocketIO
+simple-websocket
+pyudev==0.24.4

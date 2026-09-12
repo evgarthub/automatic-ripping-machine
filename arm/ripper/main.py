@@ -58,13 +58,19 @@ def log_udev_params(dev_path):
     logging.debug("******************* Logging udev attributes *******************")
     context = pyudev.Context()
     device = pyudev.Devices.from_device_file(context, dev_path)
+    is_debug = logging.getLogger().level == logging.DEBUG
     for key, value in device.items():
-        logging.debug(f"{key}:{value}")
+        key_upper = key.upper()
+        if any(s in key_upper for s in ("SERIAL", "TOKEN", "PASSWORD")):
+            logging.debug(f"{key}:{utils.mask_sensitive_value(key, value, debug=is_debug)}")
+        else:
+            logging.debug(f"{key}:{value}")
     logging.debug("******************* End udev attributes *******************")
 
 
 def log_arm_params(job):
     """log all entry parameters"""
+    is_debug = logging.getLogger().level == logging.DEBUG
 
     # log arm parameters
     logging.info("******************* Logging ARM variables *******************")
@@ -81,7 +87,8 @@ def log_arm_params(job):
                 "COMPLETED_PATH", "EXTRAS_SUB", "EMBY_REFRESH", "EMBY_SERVER",
                 "EMBY_PORT", "NOTIFY_RIP", "NOTIFY_TRANSCODE",
                 "MAX_CONCURRENT_TRANSCODES", "MAX_CONCURRENT_MAKEMKVINFO"):
-        logging.info(f"{key.lower()}: {str(cfg.arm_config.get(key, '<not given>'))}")
+        val = cfg.arm_config.get(key, '<not given>')
+        logging.info(f"{key.lower()}: {utils.mask_sensitive_value(key, val, debug=is_debug)}")
     logging.info("******************* End of config parameters *******************")
 
 

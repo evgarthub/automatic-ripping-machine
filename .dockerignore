@@ -213,11 +213,25 @@ cython_debug/
 
 # ARM-specific
 .github/
+.git/
 .dockerignore
 .gitignore
 .gitmodules
 
+# Stray root-level JS tooling state (arm-react deps are built in the spa stage)
+node_modules/
+.pnp.cjs
+package-lock.json
+yarn.lock
+
 *.yml
 *.md
+*.tar
 !README.md
 Dockerfile
+
+# React SPA: built inside the Docker spa stage, never from local state
+arm-react/node_modules/
+arm-react/dist/
+arm-react/.yarn/
+!arm-react/.yarnrc.yml

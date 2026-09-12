@@ -1,0 +1,30 @@
+# Docker Desktop (Windows): run from repo root:
+#   docker compose -f scripts/docker/docker-compose.yml up --build
+#
+# Data dirs are created under repo /.arm-docker on first start.
+
+services:
+  arm:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    image: arm-local
+    container_name: arm-local
+    ports:
+      - "8080:8080"
+    environment:
+      - ARM_UID=1000
+      - ARM_GID=1000
+      - TZ=Europe/Kyiv
+      - ARM_DEV_MODE=true
+      # Uncomment to force the full recursive chown of /opt/arm on every start (slow on bind mounts)
+      # - ARM_FORCE_CHOWN=true
+    volumes:
+      - ../../.arm-docker/home:/home/arm
+      - ../../.arm-docker/home/music:/home/arm/music
+      - ../../.arm-docker/home/logs:/home/arm/logs
+      - ../../.arm-docker/home/media:/home/arm/media
+      - ../../.arm-docker/config:/etc/arm/config
+      - ../../arm:/opt/arm/arm
+    privileged: true
+    restart: unless-stopped

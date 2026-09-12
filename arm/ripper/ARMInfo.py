@@ -49,6 +49,12 @@ class ARMInfo:
         branch_len = 10
         cmd = f"cd {self.install_path} && git branch && git log -1"
         git_output = ProcessHandler.arm_subprocess(cmd, True)
+        if git_output is None:
+            logging.warning("Unable to get git version. "
+                            "Is this a non-git installation of ARM?")
+            self.git_branch = "unknown"
+            self.git_commit = "unknown"
+            return
         git_regex = r"\*\s(\S+)\n(?:\s*\S*\n){1,10}(?:commit )([a-z\d]{5,7})"
         git_match = re.search(git_regex, git_output)
 

@@ -4,6 +4,7 @@ import datetime
 import os
 import logging
 import subprocess
+import shlex
 import shutil
 import time
 import random
@@ -30,6 +31,37 @@ from arm.models.system_drives import SystemDrives
 from arm.ripper import apprise_bulk
 
 NOTIFY_TITLE = "ARM notification"
+
+_SENSITIVE_KEY_FRAGMENTS = ("PASSWORD", "TOKEN", "SECRET", "HASH", "API_KEY")
+_SENSITIVE_VALUE_RE = re.compile(
+    r"(tgram://|mailto://[^:]+:[^@]+@|://[^:]+:[^@]+@|"
+    r"[?&](?:token|key|secret|password|apikey)=)",
+    re.IGNORECASE,
+)
+
+
+def mask_sensitive_value(key: str, value, debug: bool = False) -> str:
+    """
+    Mask a config value that may contain credentials.
+
+    Returns the full unmasked value when *debug* is True.
+    Otherwise applies partial masking: first 2 chars + ``****`` + last 2 chars
+    for values 6+ chars, full ``****`` for shorter values, and ``""`` for
+    empty / None values.
+    """
+    if debug:
+        return str(value)
+    if value is None or value == "":
+        return ""
+    val_str = str(value)
+    key_upper = key.upper()
+    is_sensitive_key = any(frag in key_upper for frag in _SENSITIVE_KEY_FRAGMENTS)
+    is_sensitive_value = bool(_SENSITIVE_VALUE_RE.search(val_str))
+    if not is_sensitive_key and not is_sensitive_value:
+        return val_str
+    if len(val_str) < 6:
+        return "****"
+    return val_str[:2] + "****" + val_str[-2:]
 
 
 class RipperException(Exception):
@@ -448,29 +480,75 @@ def rip_music(job, logfile):
     :param logfile: location of logfile\n
     :return: Bool on success or fail
     """
+    from arm.ripper.progress import emit_job_progress
 
     abcfile = cfg.arm_config["ABCDE_CONFIG_FILE"]
     if job.disctype == "music":
         logging.info("Disc identified as music")
-        # If user has set a cfg.arm_config file with ARM use it
         if os.path.isfile(abcfile):
-            cmd = f'abcde -d "{job.devpath}" -c {abcfile} >> "{os.path.join(job.config.LOGPATH, logfile)}" 2>&1'
+            cmd = f'abcde -d "{job.devpath}" -c {abcfile}'
         else:
-            cmd = f'abcde -d "{job.devpath}" >> "{os.path.join(job.config.LOGPATH, logfile)}" 2>&1'
+            cmd = f'abcde -d "{job.devpath}"'
 
         logging.debug(f"Sending command: {cmd}")
         args = {"status": JobState.AUDIO_RIPPING.value}
         database_updater(args, job)
 
+        full_logfile = os.path.join(job.config.LOGPATH, logfile)
+        track_re = re.compile(r'\(track\s+(\d+)\s+of\s+(\d+)\)')
+        total_tracks = 0
+        output_lines = []
+
         try:
-            # TODO check output and confirm all tracks ripped; find "Finished\.$"
-            subprocess.check_output(cmd, shell=True).decode("utf-8")
+            process = subprocess.Popen(
+                shlex.split(cmd),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                universal_newlines=True,
+                bufsize=1,
+            )
+
+            with open(full_logfile, "a", encoding="utf-8", errors="replace") as logf:
+                for line in process.stdout:
+                    output_lines.append(line)
+                    tagged = line if line.lstrip().startswith("[") else f"[ABCDE]{line}"
+                    logf.write(tagged)
+                    logf.flush()
+
+                    m = track_re.search(line)
+                    if m:
+                        track_num = int(m.group(1))
+                        total_tracks = int(m.group(2))
+                        progress = track_num / total_tracks * 100
+                        emit_job_progress(
+                            job,
+                            progress,
+                            stage=f"Track {track_num}/{total_tracks}",
+                        )
+
+            process.wait()
+            accumulated = "".join(output_lines)
+
+            if process.returncode != 0:
+                err = f"Call to abcde failed with code: {process.returncode}"
+                args = {"status": JobState.FAILURE.value, "errors": err}
+                database_updater(args, job)
+                logging.error(err)
+                return False
+
+            if "Finished." not in accumulated:
+                err = "abcde did not report 'Finished.' — rip may be incomplete"
+                args = {"status": JobState.FAILURE.value, "errors": err}
+                database_updater(args, job)
+                logging.error(err)
+                return False
+
             logging.info("abcde call successful")
             args = {"status": JobState.IDLE.value}
             database_updater(args, job)
             return True
         except subprocess.CalledProcessError as ab_error:
-            err = f"Call to abcde failed with code: {ab_error.returncode} ({ab_error.output})"
+            err = f"Call to abcde failed with code: {ab_error.returncode}"
             args = {"status": JobState.FAILURE.value, "errors": err}
             database_updater(args, job)
             logging.error(err)
@@ -664,6 +742,7 @@ def database_updater(args, job, wait_time=90):
     for i in range(wait_time):  # give up after the users wait period in seconds
         try:
             db.session.commit()
+            return True
         except Exception as error:
             if "locked" in str(error):
                 time.sleep(1)
@@ -671,8 +750,8 @@ def database_updater(args, job, wait_time=90):
             else:
                 logging.debug(f"Error: {error}")
                 raise RuntimeError(str(error)) from error
-    logging.debug("successfully written to the database")
-    return True
+    logging.error("Failed to write to the database after %d attempts", wait_time)
+    return False
 
 
 def database_adder(obj_class):
@@ -699,24 +778,42 @@ def database_adder(obj_class):
     return True
 
 
-def clean_old_jobs():
-    """
-    Check for running jobs - Update failed jobs that are no longer running\n
-    :return: None
-    """
+def watchdog_check():
+    """Check for zombie or dead PID jobs and mark them as failed."""
     active_jobs = db.session.query(Job).filter(Job.status.notin_(['fail', 'success'])).all()
-    # Clean up abandoned jobs
     for job in active_jobs:
         if psutil.pid_exists(job.pid):
             job_process = psutil.Process(job.pid)
-            if job.pid_hash == hash(job_process):
-                logging.info(f"Job #{job.job_id} with PID {job.pid} is currently running.")
+            if job.pid_hash != hash(job_process):
+                logging.warning(
+                    f"Job #{job.job_id} PID {job.pid} alive but hash mismatch "
+                    f"(stored={job.pid_hash}, actual={hash(job_process)}). "
+                    f"PID reuse detected — marking job as failed."
+                )
+                database_updater({'status': JobState.FAILURE.value}, job)
+                notification = Notifications(
+                    f"Job: {job.job_id} failed",
+                    f"PID {job.pid} hash mismatch — possible PID reuse"
+                )
+                db.session.add(notification)
+                db.session.commit()
         else:
-            logging.info(f"Job #{job.job_id} with PID {job.pid} has been abandoned."
-                         f"Updating job status to fail.")
-            job.status = JobState.FAILURE.value
-            db.session.commit()
+            logging.info(
+                f"Job #{job.job_id} with PID {job.pid} is no longer running. "
+                f"Updating job status to fail."
+            )
             database_updater({'status': JobState.FAILURE.value}, job)
+            notification = Notifications(
+                f"Job: {job.job_id} failed",
+                f"Process with PID {job.pid} is no longer running"
+            )
+            db.session.add(notification)
+            db.session.commit()
+
+
+def clean_old_jobs():
+    """Backward-compatible wrapper — delegates to watchdog_check."""
+    watchdog_check()
 
 
 def check_ip():

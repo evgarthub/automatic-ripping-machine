@@ -8,6 +8,10 @@ LABEL org.opencontainers.image.description='Automatic Ripping Machine for fully 
 
 EXPOSE 8080
 
+# Override the init script with dev-friendly version
+COPY ./scripts/docker/arm_user_files_setup.sh /etc/my_init.d/arm_user_files_setup.sh
+RUN chmod +x /etc/my_init.d/arm_user_files_setup.sh
+
 # Setup folders and fstab
 RUN \
     mkdir -m 0777 -p /home/arm \
@@ -61,11 +65,28 @@ RUN chmod +x /etc/my_init.d/*.sh
 
 
 ###########################################################
+# Build the React SPA (arm-react) into static files
+FROM node:24-slim AS spa
+
+WORKDIR /build
+COPY arm-react/package.json arm-react/yarn.lock arm-react/.yarnrc.yml ./
+RUN corepack enable && yarn install --immutable
+COPY arm-react/ ./
+RUN yarn build
+
+
+###########################################################
 # Final image pushed for use
 FROM base AS automatic-ripping-machine
 
 # Copy over source code
 COPY . /opt/arm/
+
+# Copy the SPA build over the source tree (arm-react/dist is dockerignored)
+COPY --from=spa /build/dist /opt/arm/arm-react/dist
+
+# Base image pins deps from an older tree; install current requirements (e.g. Flask-SocketIO).
+RUN python3 -m pip install --no-cache-dir -r /opt/arm/requirements.txt
 
 # Our docker udev rule
 RUN ln -sv /opt/arm/setup/51-docker-arm.rules /lib/udev/rules.d/

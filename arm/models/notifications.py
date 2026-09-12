@@ -1,5 +1,7 @@
 import datetime
 
+from sqlalchemy.orm import Mapped
+
 from arm.ui import db
 
 
@@ -9,7 +11,7 @@ class Notifications(db.Model):
     """
     id = db.Column(db.Integer, autoincrement=True, primary_key=True)
     seen = db.Column(db.Boolean)
-    trigger_time = db.Column(db.DateTime)
+    trigger_time: Mapped[datetime.datetime] = db.Column(db.DateTime)
     dismiss_time = db.Column(db.DateTime)
     title = db.Column(db.String(256))
     message = db.Column(db.String(256))
