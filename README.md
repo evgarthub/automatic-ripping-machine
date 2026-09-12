@@ -45,7 +45,21 @@ See: https://b3n.org/automatic-ripping-machine
 - Headless, designed to be run from a server
 - Can rip from multiple-optical drives in parallel
 - Python Flask UI to interact with ripping jobs, view logs, update jobs, etc
+- React UI with more user friendly styles and behavior
+- REST API primarily for new UI
 
+## Screenshots
+### New UI
+
+<img width="2514" height="1346" alt="brave_DYT7bOEvrw" src="https://github.com/user-attachments/assets/7d8f927c-d928-4a9a-8fab-860020ea1514" />
+
+<img width="2514" height="1346" alt="brave_GO1iEouy7I" src="https://github.com/user-attachments/assets/5cf0a059-cd98-40c4-ae28-f03b695a81de" />
+
+<img width="2514" height="1346" alt="brave_ITNgSzNPsw" src="https://github.com/user-attachments/assets/a3338cc7-3785-4dde-acae-fe3099fdfce1" />
+
+<img width="2514" height="1346" alt="brave_rNMA1HuNI5" src="https://github.com/user-attachments/assets/51f65cf5-a84d-4e94-94cf-8011eb17c9e0" />
+
+<img width="2514" height="1346" alt="brave_Xr9r1UiSAs" src="https://github.com/user-attachments/assets/65a95ba6-87e8-438c-b324-d72951632bf9" />
 
 
 ## Usage
